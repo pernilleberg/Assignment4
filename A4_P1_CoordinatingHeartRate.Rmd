@@ -1,0 +1,378 @@
+---
+title: "Assignment 4 - Coordinating Heart Rate"
+author: "Riccardo Fusaroli"
+date: "November 6, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Analysing Heart Rate and Respiration data
+
+The goal of this assignment is to first familiarize you with heart rate, and respiration data and their preprocessing. The second part explores how to analyze interpersonal coordination of these signals.
+
+#What drives heart-rate respiration coordination?
+
+These are the questions you need to be able to answer at the end of the assignment (aka that you need to submit as part of the portfolio)
+
+1) How do you preprocess heart rate and respiration data? Describe the process. If any data needs to be excluded, list the excluded data and motivate the exclusion.
+
+#Preprocessing:
+#1) Detecting and removing artifacts (when signal was lost for various reasons) - filter values without a certain range from general sginal 
+#2) Downsampling - the signal was collected 1000 times/sec for 5 min. We smooth the time-series --> 10 times/sec
+#3) Scale - substracting the mean from signal, dividing with SD (because heart rate is different between people due to body size, fitness, etc.) - by scaling the signals, they get the same baseline; time-series are no comparable. 
+
+2) Do you observe interpersonal coordination in heart rate and respiration? Describe your control baseline, the method used to quantify coordination, and the statistical models used to infer whether coordination was higher than in the baseline. Report the results of the models.
+
+#Is there coordination at all?
+#Which baselines; suffled (randomizes the order; different from coordination in non-randomized time-series?), and surrogate pairs (is the coordination an effect of the activity? Surrogate pair create a base-line, matching with real pairs; alike? The activity (activity driven coordination). Different? It's an interpersonal coordination)
+
+3) Do you observe differences in coordination between conditions? Report the models and results.
+#Difference between conditions? #Is there an effect of conditions y predicted by condition (y ~ c)? (Not required, but interesting)Interaction between condition and contrast between baseline and "real data"
+
+4) Is respiration coordination a likely driver of heart rate coordination? Describe how you would test for it. Bonus points if you actually run the tests and report methods and results.
+
+#Can we put respiration into the model?
+
+N.B. to give you a bit more data I included data from last year (Study1) and from your class (Study2). Note that synchronouns and turn-taking are the same across both studies, but the third condition is different: last year it was self-paced joint reading; this year it was the tv-series conversation. So you might want to exclude the self-paced reading (but, up to you!)
+
+## Step by step suggestions to solve the assignment
+
+### Exploring physiological signals
+
+- Choose one pair (one pair, three conditions)
+```{r}
+#Preprocessing on one pair
+#Plot the signals (one for respiration, one for HR)
+#Run crqa (works)
+#When this work - loop through all the files (almost done)
+
+#Loading packages:
+library(pacman)
+p_load(ggplot2,dplyr,groupdata2,crqa,gridExtra)
+
+setwd("C:/Users/Ejer/Desktop/3. semester/Experimental Methods 3/Assignment2")
+
+folder = "C:/Users/Ejer/Desktop/3. semester/Experimental Methods 3/Assignment2/Heart Rate/"
+filelist = list.files(path = folder  , pattern = "*.csv", full.names = T)
+
+#For testing the functions on only one pair
+pair1 = read.csv(filelist[1], sep = ",")
+pair1$temp = 1
+
+##Preprossing the data:
+
+#Rescaling the variables 
+rescalelist = c("Resp1","Resp2","ECG1","ECG2","HR1","HR2")
+pair1_rescaled = pair1[, colnames(pair1) %in% rescalelist] %>%
+  lapply(.,function(data) scale(data, center = mean(data, na.rm = T), scale = sd(data, na.rm = T))) %>%
+  cbind(.,pair1[,! colnames(pair1) %in% rescalelist])
+
+#Downsampling
+pair1_rescaled = pair1_rescaled %>%    
+  group(n = 100, method = 'greedy') %>%
+  dplyr::summarise(time = mean(time,na.rm=T),HR1 = mean(HR1,na.rm=T),HR2 = mean(HR2,na.rm=T),      Resp1 = mean(Resp1,na.rm=T),Resp2 = mean(Resp2,na.rm=T))
+pair1_rescaled = subset(pair1_rescaled, select = -c(.groups))
+
+#Downsampling function
+DownSampling = function(data){
+  downsampling_df = data %>%
+   group(n = 100, method = 'greedy') %>%
+  dplyr::summarise(time = mean(time,na.rm=T),HR1 = mean(HR1,na.rm=T),HR2 = mean(HR2,na.rm=T),      Resp1 = mean(Resp1,na.rm=T),Resp2 = mean(Resp2,na.rm=T))
+return(downsampling_df)
+}
+
+#Rescaling function
+ReScale = function(df,rescalelist = NULL){
+  if (is.null(rescalelist) == T){
+    rescalelist = colnames(df)
+  }
+  df$temp = 1
+  df$temp1 = 1
+  scaled_df = df[, colnames(df) %in% rescalelist] %>%
+  lapply(.,function(data) scale(data, center = mean(data, na.rm = T), scale = sd(data, na.rm = T))) %>%
+  cbind(.,df[,! colnames(df) %in% rescalelist])
+  scaled_df = subset(scaled_df, select = -c(temp, temp1))
+  return(scaled_df)
+}
+
+#Plotting the signals (before removing outliers)
+#Respiration
+ggplot2::ggplot(pair1, aes(x = time, y = Resp1))+geom_line()+
+  geom_line(aes(time,Resp2),color = "red")
+
+#Heart rate
+ggplot2::ggplot(pair1_rescaled, aes(x = time, y = HR1))+geom_line()+
+  geom_line(aes(time,HR2),color="red")
+
+#Ricardo's removing outlier function - make a function which can loop through more files?
+removeOuts = function(ts,threshold){  
+  ts[ts>(mean(ts,na.rm=T)+
+             (threshold*sd(ts,na.rm=T)))|
+       ts<(mean(ts,na.rm=T)-(threshold*sd(ts,na.rm=T)))] = mean(ts,na.rm=T)
+  return(ts)}
+
+#threshold=2.5
+#pair1_rescaled$HR1=removeOuts(pair1_rescaled$HR1,threshold)
+#pair1_rescaled$HR2 = removeOuts(pair1_rescaled$HR2,threshold)
+
+#pair1_rescaled$Resp1 = removeOuts(pair1_rescaled$Resp1,threshold)
+#pair1_rescaled$Resp2 = removeOuts(pair1_rescaled$Resp2,threshold)
+
+#For testing RemoveOutlier function
+#df = pair1_rescaled
+#removeOutlierl = NULL
+
+#RemoveOutliers function, that automatically applies threshold to the variables
+ReMoveOutliers = function(df, threshold, removeOutlierl = NULL){
+  if (is.null(removeOutlierl) == T){
+    removeOutlierl = colnames(df)
+  }
+  df$temp = 1
+  df$temp1 = 1
+  noOutliers_df = df[, colnames(df) %in% removeOutlierl] %>%
+  lapply(.,function(data) removeOuts(ts = data, threshold = threshold)) %>%
+  cbind(.,df[,! colnames(df) %in% removeOutlierl])
+  noOutliers_df = subset(noOutliers_df, select = -c( temp, temp1))
+  return(noOutliers_df)
+}
+
+#Df after all steps of preprocessing is finito!
+Preprocessed_test=ReMoveOutliers(pair1_rescaled, threshold = 2.5)
+
+
+#Which files to exclude:
+plot1=ggplot2::ggplot(pair1_rescaled, aes(x = time, y = Resp1))+geom_line()+
+  geom_line(aes(time,Resp2),color = "red")
+
+#Heart rate
+ggplot2::ggplot(pair1_rescaled, aes(x = time, y = HR1))+geom_line()+
+  geom_line(aes(time,HR2),color="red")
+
+temp = read.csv(filelist[1])
+
+#Making a loop, that reads in all the files, preprocess them and makes graphs, so we can check for files to exclude (if any)
+n = 1 #HUSK DEN HER LINJE FORHELVEDE!
+for (file in filelist){
+  temp = read.csv(file, sep = ",")
+  downSampling_df = DownSampling(temp)
+  downSampling_df = subset(downSampling_df, select = -c(.groups))
+  noOutliers_df = ReMoveOutliers(downSampling_df, threshold = 2.5)
+  Preprocessed_df = ReScale(noOutliers_df)
+  plot1=ggplot2::ggplot(Preprocessed_df, aes(x = time, y = Resp1))+geom_line()+
+  geom_line(aes(time,Resp2),color = "red")
+  assign(paste("plotResp",n,sep =""),plot1)
+  plot2 = ggplot2::ggplot(Preprocessed_df, aes(x = time, y = HR1))+geom_line()+
+  geom_line(aes(time,HR2),color="red")
+  assign(paste("plotHR",n,sep = ""),plot2)
+  n = n+1 
+  } 
+
+
+plotResp1
+plotHR1
+
+gridExtra::grid.arrange(plotResp1,plotHR1) #exclude Resp
+gridExtra::grid.arrange(plotResp2,plotHR2) #exclude Resp
+gridExtra::grid.arrange(plotResp3,plotHR3)
+gridExtra::grid.arrange(plotResp4,plotHR4) #exclude Resp
+gridExtra::grid.arrange(plotResp5,plotHR5) #exclude Resp
+gridExtra::grid.arrange(plotResp6,plotHR6)
+gridExtra::grid.arrange(plotResp7,plotHR7) #exclude based on Resp?
+gridExtra::grid.arrange(plotResp8,plotHR8) 
+gridExtra::grid.arrange(plotResp9,plotHR9) #exclude based on Resp?
+gridExtra::grid.arrange(plotResp10,plotHR10)
+gridExtra::grid.arrange(plotResp11, plotHR11)
+gridExtra::grid.arrange(plotResp12,plotHR12)
+gridExtra::grid.arrange(plotResp13,plotHR13)
+gridExtra::grid.arrange(plotResp14,plotHR14)
+gridExtra::grid.arrange(plotResp15, plotHR15)
+gridExtra::grid.arrange(plotResp16,plotHR16)
+gridExtra::grid.arrange(plotResp17,plotHR17)
+gridExtra::grid.arrange(plotResp18,plotHR18)
+gridExtra::grid.arrange(plotResp19,plotHR19)
+gridExtra::grid.arrange(plotResp20,plotHR20)
+gridExtra::grid.arrange(plotResp21,plotHR21) #exclude based on HR?
+gridExtra::grid.arrange(plotResp22,plotHR22)
+gridExtra::grid.arrange(plotResp23,plotHR23)
+gridExtra::grid.arrange(plotResp24,plotHR24) #exclude based on Resp?
+gridExtra::grid.arrange(plotResp25,plotHR25)
+gridExtra::grid.arrange(plotResp26,plotHR26) 
+gridExtra::grid.arrange(plotResp27,plotHR27) 
+gridExtra::grid.arrange(plotResp28,plotHR28)
+gridExtra::grid.arrange(plotResp29,plotHR29)
+gridExtra::grid.arrange(plotResp30,plotHR30)
+
+
+#Run craq for one pair, one condition--> remember to find parameters
+par = list(lgM =  15, steps = seq(1, 6, 1),  radiusspan = 100,  radiussample = 40, normalize = 0,  rescale = 0,  mindiagline = 2,  minvertline = 2,  tw = 0,  whiteline = FALSE,  recpt = FALSE,  fnnpercent = 10,  typeami = "mindip")
+opt_param = try(optimizeParam(pair1_rescaled$HR1, pair1_rescaled$HR2, par, min.rec = 3, max.rec = 4))
+
+#Testing crqa for Resp
+opt_param = try(optimizeParam(pair1_rescaled$Resp1, pair1_rescaled$Resp2, par, min.rec = 3, max.rec = 4))
+
+crqa_pair1_resp = crqa(pair1_rescaled$Resp1, pair1_rescaled$Resp1, embed = opt_param$emddim, delay = opt_param$delay, normalize = 0, rescale = 0, radius = opt_param$radius+1.2, mindiagline = 2, minvertline = 1)
+RP = crqa_pair1_resp$RP
+RP = matrix(as.numeric(RP), nrow = ncol(RP)) 
+cols = c("white","blue4")
+image(RP, xlab = "Resp1", ylab = "Resp2", col = cols)
+
+#Testing crqa for HR
+crqa_pair1_hr = crqa(pair1_rescaled$HR1, pair1_rescaled$HR2, embed = opt_param$emddim, delay = opt_param$delay, normalize = 0, rescale = 0, radius = opt_param$radius+1.2, mindiagline = 2, minvertline = 1)
+RP = crqa_pair_hr$RP
+RP = matrix(as.numeric(RP), nrow = ncol(RP)) 
+cols = c("white","blue4")
+image(RP, xlab = "HR1", ylab = "HR2", col = cols)
+
+```
+- Load the logs
+- Produce a plot of the participants' respiration signal and a different one of the participants' HR signal (for inspecting whether the data is usable)
+  N.B: remember the slides: artifacts, downsampling, scaling.
+  N.B. The gridExtra::grid.arrange() function allows you to display the plots side by side. E.g. grid.arrange(plot1, plot2, plot3, ncol=3)
+- Can you eye-ball which condition if any displays more physiological coordination?
+
+- Run crqa on heart rate and respiration data (find parameters, run crqa)
+- Does this tell you more than just eyeballing the plots?
+
+### Systematically pre-process the data
+- Loop through all the files (either with a loop or with a function), check which files should be excluded, if any, and save the pre-processed time-series. Tip: plot and visually inspect the data to figure out which should be excluded.
+- Run crqa on all the pre-processed time-series and save the output (don't forget to add columns with study, group, condition and trial). Tip: remember to first assess optimal parameters (dimensions, delay, radius) across all timeseries. Tip: it will often fail, just take whatever parameters you get, select optimal across timeseries parameters and run crqa on all timeseries with those. Tip: double check the rr. When I ran the loop, I got very low rr, so I adjusted the radius until the average of rr across all pairs was approx. 4%.
+
+```{r}
+#Everbody do the loop!
+#Defining items to test loops and functions
+#dataset = pair1_rescaled
+#t1 = "HR1"
+#t2 = "HR2"
+#n = NA
+
+opt_param_extractor = function(dataset,t1,t2, n = NA){
+  par = list(lgM =  15, steps = seq(1, 6, 1),  radiusspan = 100,  radiussample = 40, normalize = 0,  rescale = 0,  mindiagline = 2,  minvertline = 2,  tw = 0,  whiteline = FALSE,  recpt = FALSE,  fnnpercent = 10,  typeami = "mindip")
+  opt_param = NULL 
+  t1 = dplyr::select_(dataset, t1)
+  t2 = dplyr::select_(dataset, t2)
+  opt_param = try(optimizeParam(t1, t2, par, min.rec = 3, max.rec = 4)) 
+  if (length(opt_param) > 1) {
+    result_df = data.frame(radius = opt_param[1], emddim = opt_param[2], delay = opt_param[3], n = n)
+  } else {
+  result_df = data.frame(radius = NA, emddim = NA, delay = NA, n = n)
+  }
+  return(result_df)
+} 
+
+rqa_extractor = function(dataset, t1, t2, embed, delay, radius){
+  result = NULL
+  t1 = dplyr::select_(dataset, t1)
+  t2 = dplyr::select_(dataset, t2)
+  result = try(crqa(t1, t2, embed = embed, delay = delay, radius = radius+1.2, normalize = 0, rescale = 0, mindiagline = 2, minvertline = 2))
+  if (length(result) > 1) {
+    result_df = data.frame(RR = result[1], DET = result[2], NRLINE = result[3],
+             maxL = result[4], L = result[5], ENTR = result[6],
+             rENTR = result[7], LAM = result[8], TT = result[9])
+  } else {
+  result_df = data.frame(RR = NA, DET = NA, NRLINE = NA,
+             maxL = NA, L = NA, ENTR = NA,
+             rENTR = NA, LAM = NA, TT = NA)
+  }
+  return(result_df)
+}
+
+temp = pair1
+
+#A loop that goes through all the files and applies Preprocessing functions and opm_extractor
+for (file in filelist){
+  temp = read.csv(file, sep = ",")
+  downSampling_df = DownSampling(temp)
+  downSampling_df = subset(downSampling_df, select = -c(.groups))
+  scaled_df = ReScale(downSampling_df)
+  Preprocessed_df = ReMoveOutliers(downSampling_df, threshold = 2.5)
+  opt_param_Resp = opt_param_extractor(Preprocessed_df, "Resp1", "Resp2")
+  opt_param_HR = opt_param_extractor(Preprocessed_df, "HR1", "HR2")
+  colnames(opt_param_Resp) = paste("Resp", colnames(opt_param_Resp), sep = "_")
+  colnames(opt_param_HR) = paste("HR",colnames(opt_param_HR), sep = "_")
+  if (file == filelist[1]){
+    opt_df = cbind(opt_param_Resp,opt_param_HR)
+  } else {
+      opt_df = rbind(opt_df, cbind(opt_param_Resp,opt_param_HR))
+  }
+  }
+#We get a dataframe containing optimal paramters for Resp and HR for each of the files
+
+
+#Creating a dataframe with the opt parameters best descriping the all the data (finding the median of the extracted parameter-values)
+opt_param_df = data.frame(radius_resp = median(opt_df$Resp_radius, na.rm = T),
+                    emddim_resp = median(opt_df$Resp_emddim, na.rm = T),
+                    delay_resp = median(opt_df$Resp_delay, na.rm = T),
+                    radius_HR = median(opt_df$HR_radius, na.rm = T),
+                    emddim_HR = median(opt_df$HR_emddim, na.rm = T),
+                    delay_HR = median(opt_df$HR_delay, na.rm = T))
+#That shit works!
+
+#Now; we need to do the crqa
+
+#Defining stuff to test the function
+dataset = Preprocessed_df
+t1 = "HR1"
+t2 = "HR2"
+embed = opt_param_df$emddim_HR
+delay = opt_param_df$delay_HR
+radius = opt_param_df$radius_HR
+
+rqa_extractor = function(dataset, t1, t2, embed, delay, radius){
+  result = NULL
+  t1 = dplyr::select_(dataset, t1)
+  t2 = dplyr::select_(dataset, t2)
+  result = try(crqa(t1, t2, embed = embed, delay = delay, radius = radius+1.2, normalize = 0, rescale = 0, mindiagline = 2, minvertline = 2))
+  if (length(result) > 1) {
+    result_df = data.frame(RR = result[1], DET = result[2], NRLINE = result[3],
+             maxL = result[4], L = result[5], ENTR = result[6],
+             rENTR = result[7], LAM = result[8], TT = result[9])
+  } else {
+  result_df = data.frame(RR = NA, DET = NA, NRLINE = NA,
+             maxL = NA, L = NA, ENTR = NA,
+             rENTR = NA, LAM = NA, TT = NA)
+  }
+  return(result_df)
+}
+
+test_crqa = rqa_extractor(Preprocessed_df, HR1, HR2, embed = opt_param_df$emddim_HR, delay = opt_param_df$delay_HR, radius = opt_param_df$radius_HR)
+
+temp = Preprocessed_df
+
+for (file in filelist){
+  temp = read.csv(file, sep = ",")
+  crqa_hr = rqa_extractor(temp, "HR1", "HR2", embed = opt_param_df$emddim_HR, delay = opt_param_df$delay_HR, radius = opt_param_df$radius_HR)
+  crqa_resp = rqa_extractor(temp, "Resp1", "Resp2", embed = opt_param_df$emddim_resp, delay = opt_param_df$delay_resp, radius = opt_param_df$radius_resp)
+  colnames(crqa_resp) = paste("Resp", colnames(crqa_resp), sep = "_")
+  colnames(crqa_hr) = paste("HR",colnames(crqa_hr), sep = "_")
+  if (file == filelist[1]){
+    rqa_result = cbind(crqa_resp, crqa_hr)
+  }else{
+      rqa_result = rbind(rqa_result,cbind(crqa_resp, crqa_hr))
+    }
+}
+#Extracting info filename
+#IT FUCKING WORKS!
+
+```
+
+### Creating controls: shuffled controls
+ - loop through all pairs and conditions
+ - shuffle the timeseries (take a timeseries and rearrange its values in a random order). Tip check the sample() function
+ - run crqa and save the output. NB. which delay, embed, radius parameters should you use?
+ - statistically compare the crqa indexes in real and shuffled pairs
+ 
+### TRICKY! Creating controls: surrogate pair controls
+ - Per each real pair, identify at least one surrogate pair (matching one of the participants, with somebody doing the same task, but in a different pair). Tip: Celine will share a commented script
+ - Run crqa on all the surrogate pairs and save the output. NB. which delay, embed, radius parameters should you use?
+ - Test whether crqa shows a difference between real and surrogate pairs
+
+### Testing effects of conditions
+ - make a (probably underpowered) mixed model testing effects of the different conditions on heart rate and respiration coordination
+ - N.B: would it make sense to include surrogate pairs? and if so how? what would that tell you?
+
+### Effects of respiration coordination on heart rate coordination
+ - describe how you would test those.
+ - Optional: run the models and report them
