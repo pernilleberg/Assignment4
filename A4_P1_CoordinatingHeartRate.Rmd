@@ -47,15 +47,15 @@ N.B. to give you a bit more data I included data from last year (Study1) and fro
 #Preprocessing on one pair
 #Plot the signals (one for respiration, one for HR)
 #Run crqa (works)
-#When this work - loop through all the files (almost done)
+#When this work - loop through all the files (done)
 
 #Loading packages:
 library(pacman)
 p_load(ggplot2,dplyr,groupdata2,crqa,gridExtra)
 
-setwd("C:/Users/Ejer/Desktop/3. semester/Experimental Methods 3/Assignment2")
+#setwd("C:/Users/Ejer/Desktop/3. semester/Experimental Methods 3/Assignment4")
 
-folder = "C:/Users/Ejer/Desktop/3. semester/Experimental Methods 3/Assignment2/Heart Rate/"
+folder = "C:/Users/Ejer/Desktop/3. semester/Experimental Methods 3/Assignment4/Heart Rate/"
 filelist = list.files(path = folder  , pattern = "*.csv", full.names = T)
 
 #For testing the functions on only one pair
@@ -114,17 +114,6 @@ removeOuts = function(ts,threshold){
        ts<(mean(ts,na.rm=T)-(threshold*sd(ts,na.rm=T)))] = mean(ts,na.rm=T)
   return(ts)}
 
-#threshold=2.5
-#pair1_rescaled$HR1=removeOuts(pair1_rescaled$HR1,threshold)
-#pair1_rescaled$HR2 = removeOuts(pair1_rescaled$HR2,threshold)
-
-#pair1_rescaled$Resp1 = removeOuts(pair1_rescaled$Resp1,threshold)
-#pair1_rescaled$Resp2 = removeOuts(pair1_rescaled$Resp2,threshold)
-
-#For testing RemoveOutlier function
-#df = pair1_rescaled
-#removeOutlierl = NULL
-
 #RemoveOutliers function, that automatically applies threshold to the variables
 ReMoveOutliers = function(df, threshold, removeOutlierl = NULL){
   if (is.null(removeOutlierl) == T){
@@ -154,7 +143,7 @@ ggplot2::ggplot(pair1_rescaled, aes(x = time, y = HR1))+geom_line()+
 temp = read.csv(filelist[1])
 
 #Making a loop, that reads in all the files, preprocess them and makes graphs, so we can check for files to exclude (if any)
-n = 1 #HUSK DEN HER LINJE FORHELVEDE!
+n = 1 
 for (file in filelist){
   temp = read.csv(file, sep = ",")
   downSampling_df = DownSampling(temp)
@@ -171,18 +160,15 @@ for (file in filelist){
   } 
 
 
-plotResp1
-plotHR1
-
 gridExtra::grid.arrange(plotResp1,plotHR1) #exclude Resp
 gridExtra::grid.arrange(plotResp2,plotHR2) #exclude Resp
 gridExtra::grid.arrange(plotResp3,plotHR3)
 gridExtra::grid.arrange(plotResp4,plotHR4) #exclude Resp
 gridExtra::grid.arrange(plotResp5,plotHR5) #exclude Resp
 gridExtra::grid.arrange(plotResp6,plotHR6)
-gridExtra::grid.arrange(plotResp7,plotHR7) #exclude based on Resp?
+gridExtra::grid.arrange(plotResp7,plotHR7) #exclude based on Resp
 gridExtra::grid.arrange(plotResp8,plotHR8) 
-gridExtra::grid.arrange(plotResp9,plotHR9) #exclude based on Resp?
+gridExtra::grid.arrange(plotResp9,plotHR9) #exclude based on Resp
 gridExtra::grid.arrange(plotResp10,plotHR10)
 gridExtra::grid.arrange(plotResp11, plotHR11)
 gridExtra::grid.arrange(plotResp12,plotHR12)
@@ -194,10 +180,10 @@ gridExtra::grid.arrange(plotResp17,plotHR17)
 gridExtra::grid.arrange(plotResp18,plotHR18)
 gridExtra::grid.arrange(plotResp19,plotHR19)
 gridExtra::grid.arrange(plotResp20,plotHR20)
-gridExtra::grid.arrange(plotResp21,plotHR21) #exclude based on HR?
+gridExtra::grid.arrange(plotResp21,plotHR21) #exclude based on HR
 gridExtra::grid.arrange(plotResp22,plotHR22)
 gridExtra::grid.arrange(plotResp23,plotHR23)
-gridExtra::grid.arrange(plotResp24,plotHR24) #exclude based on Resp?
+gridExtra::grid.arrange(plotResp24,plotHR24) #exclude based on Resp
 gridExtra::grid.arrange(plotResp25,plotHR25)
 gridExtra::grid.arrange(plotResp26,plotHR26) 
 gridExtra::grid.arrange(plotResp27,plotHR27) 
@@ -205,8 +191,10 @@ gridExtra::grid.arrange(plotResp28,plotHR28)
 gridExtra::grid.arrange(plotResp29,plotHR29)
 gridExtra::grid.arrange(plotResp30,plotHR30)
 
+#Dropping the excluded files from filelist
+filelist = filelist[-c(1,2,4,5,7,9,21,24)]
 
-#Run craq for one pair, one condition--> remember to find parameters
+#Run craq for one pair, one condition
 par = list(lgM =  15, steps = seq(1, 6, 1),  radiusspan = 100,  radiussample = 40, normalize = 0,  rescale = 0,  mindiagline = 2,  minvertline = 2,  tw = 0,  whiteline = FALSE,  recpt = FALSE,  fnnpercent = 10,  typeami = "mindip")
 opt_param = try(optimizeParam(pair1_rescaled$HR1, pair1_rescaled$HR2, par, min.rec = 3, max.rec = 4))
 
@@ -242,11 +230,6 @@ image(RP, xlab = "HR1", ylab = "HR2", col = cols)
 
 ```{r}
 #Everbody do the loop!
-#Defining items to test loops and functions
-#dataset = pair1_rescaled
-#t1 = "HR1"
-#t2 = "HR2"
-#n = NA
 
 opt_param_extractor = function(dataset,t1,t2, n = NA){
   par = list(lgM =  15, steps = seq(1, 6, 1),  radiusspan = 100,  radiussample = 40, normalize = 0,  rescale = 0,  mindiagline = 2,  minvertline = 2,  tw = 0,  whiteline = FALSE,  recpt = FALSE,  fnnpercent = 10,  typeami = "mindip")
@@ -276,10 +259,13 @@ rqa_extractor = function(dataset, t1, t2, embed, delay, radius){
              maxL = NA, L = NA, ENTR = NA,
              rENTR = NA, LAM = NA, TT = NA)
   }
+  result_df$study = str_extract(file, "Study(\\d)") 
+  result_df$group = str_extract(file, "G(\\d)")
+  result_df$trial = str_extract(file, "T(\\d)")
+  result_df$condition = gsub('.{4}$', '', strsplit(file, "_")[[1]][4])
+  result_df$filename = file
   return(result_df)
 }
-
-temp = pair1
 
 #A loop that goes through all the files and applies Preprocessing functions and opm_extractor
 for (file in filelist){
@@ -300,7 +286,6 @@ for (file in filelist){
   }
 #We get a dataframe containing optimal paramters for Resp and HR for each of the files
 
-
 #Creating a dataframe with the opt parameters best descriping the all the data (finding the median of the extracted parameter-values)
 opt_param_df = data.frame(radius_resp = median(opt_df$Resp_radius, na.rm = T),
                     emddim_resp = median(opt_df$Resp_emddim, na.rm = T),
@@ -312,49 +297,29 @@ opt_param_df = data.frame(radius_resp = median(opt_df$Resp_radius, na.rm = T),
 
 #Now; we need to do the crqa
 
-#Defining stuff to test the function
-dataset = Preprocessed_df
-t1 = "HR1"
-t2 = "HR2"
-embed = opt_param_df$emddim_HR
-delay = opt_param_df$delay_HR
-radius = opt_param_df$radius_HR
-
-rqa_extractor = function(dataset, t1, t2, embed, delay, radius){
-  result = NULL
-  t1 = dplyr::select_(dataset, t1)
-  t2 = dplyr::select_(dataset, t2)
-  result = try(crqa(t1, t2, embed = embed, delay = delay, radius = radius+1.2, normalize = 0, rescale = 0, mindiagline = 2, minvertline = 2))
-  if (length(result) > 1) {
-    result_df = data.frame(RR = result[1], DET = result[2], NRLINE = result[3],
-             maxL = result[4], L = result[5], ENTR = result[6],
-             rENTR = result[7], LAM = result[8], TT = result[9])
-  } else {
-  result_df = data.frame(RR = NA, DET = NA, NRLINE = NA,
-             maxL = NA, L = NA, ENTR = NA,
-             rENTR = NA, LAM = NA, TT = NA)
-  }
-  return(result_df)
-}
-
-test_crqa = rqa_extractor(Preprocessed_df, HR1, HR2, embed = opt_param_df$emddim_HR, delay = opt_param_df$delay_HR, radius = opt_param_df$radius_HR)
-
-temp = Preprocessed_df
-
 for (file in filelist){
   temp = read.csv(file, sep = ",")
-  crqa_hr = rqa_extractor(temp, "HR1", "HR2", embed = opt_param_df$emddim_HR, delay = opt_param_df$delay_HR, radius = opt_param_df$radius_HR)
-  crqa_resp = rqa_extractor(temp, "Resp1", "Resp2", embed = opt_param_df$emddim_resp, delay = opt_param_df$delay_resp, radius = opt_param_df$radius_resp)
+  downSampling_df = DownSampling(temp)
+  downSampling_df = subset(downSampling_df, select = -c(.groups))
+  scaled_df = ReScale(downSampling_df)
+  Preprocessed_df = ReMoveOutliers(downSampling_df, threshold = 2.5)
+  crqa_hr = rqa_extractor(Preprocessed_df, "HR1", "HR2", embed = opt_param_df$emddim_HR, delay = opt_param_df$delay_HR, radius = opt_param_df$radius_HR)
+  crqa_resp = rqa_extractor(Preprocessed_df, "Resp1", "Resp2", embed = opt_param_df$emddim_resp, delay = opt_param_df$delay_resp, radius = opt_param_df$radius_resp)
   colnames(crqa_resp) = paste("Resp", colnames(crqa_resp), sep = "_")
   colnames(crqa_hr) = paste("HR",colnames(crqa_hr), sep = "_")
   if (file == filelist[1]){
     rqa_result = cbind(crqa_resp, crqa_hr)
   }else{
       rqa_result = rbind(rqa_result,cbind(crqa_resp, crqa_hr))
-    }
+  }
 }
-#Extracting info filename
+
+rqa_result = subset(rqa_result, select = -c(Resp_study,Resp_group,Resp_trial,Resp_condition,Resp_filename))
+rqa_result = plyr::rename(rqa_result,c("HR_study"="Study","HR_group"="Group","HR_trial"="Trial","HR_condition"="Condition","HR_filename"="Filename"))
+
 #IT FUCKING WORKS!
+#Quickly writing to csv
+write.csv(rqa_result,"crqa_result.csv")
 
 ```
 
@@ -363,6 +328,10 @@ for (file in filelist){
  - shuffle the timeseries (take a timeseries and rearrange its values in a random order). Tip check the sample() function
  - run crqa and save the output. NB. which delay, embed, radius parameters should you use?
  - statistically compare the crqa indexes in real and shuffled pairs
+ 
+```{r}
+
+```
  
 ### TRICKY! Creating controls: surrogate pair controls
  - Per each real pair, identify at least one surrogate pair (matching one of the participants, with somebody doing the same task, but in a different pair). Tip: Celine will share a commented script
