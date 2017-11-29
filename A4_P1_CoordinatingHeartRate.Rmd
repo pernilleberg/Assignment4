@@ -51,7 +51,7 @@ N.B. to give you a bit more data I included data from last year (Study1) and fro
 
 #Loading packages:
 library(pacman)
-p_load(ggplot2,dplyr,groupdata2,crqa,gridExtra)
+p_load(ggplot2,dplyr,groupdata2,crqa,gridExtra, stringr)
 
 #setwd("C:/Users/Ejer/Desktop/3. semester/Experimental Methods 3/Assignment4")
 
@@ -129,7 +129,7 @@ ReMoveOutliers = function(df, threshold, removeOutlierl = NULL){
 }
 
 #Df after all steps of preprocessing is finito!
-Preprocessed_test=ReMoveOutliers(pair1_rescaled, threshold = 2.5)
+#Preprocessed_test=ReMoveOutliers(pair1_rescaled, threshold = 2.5)
 
 
 #Which files to exclude:
@@ -249,7 +249,7 @@ rqa_extractor = function(dataset, t1, t2, embed, delay, radius){
   result = NULL
   t1 = dplyr::select_(dataset, t1)
   t2 = dplyr::select_(dataset, t2)
-  result = try(crqa(t1, t2, embed = embed, delay = delay, radius = radius+1.2, normalize = 0, rescale = 0, mindiagline = 2, minvertline = 2))
+  result = try(crqa(t1, t2, embed = embed, delay = delay, radius = radius, normalize = 0, rescale = 0, mindiagline = 2, minvertline = 2))
   if (length(result) > 1) {
     result_df = data.frame(RR = result[1], DET = result[2], NRLINE = result[3],
              maxL = result[4], L = result[5], ENTR = result[6],
@@ -272,8 +272,8 @@ for (file in filelist){
   temp = read.csv(file, sep = ",")
   downSampling_df = DownSampling(temp)
   downSampling_df = subset(downSampling_df, select = -c(.groups))
-  scaled_df = ReScale(downSampling_df)
-  Preprocessed_df = ReMoveOutliers(downSampling_df, threshold = 2.5)
+  noOutliers_df = ReMoveOutliers(downSampling_df, threshold = 2.5)
+  Preprocessed_df = ReScale(noOutliers_df)
   opt_param_Resp = opt_param_extractor(Preprocessed_df, "Resp1", "Resp2")
   opt_param_HR = opt_param_extractor(Preprocessed_df, "HR1", "HR2")
   colnames(opt_param_Resp) = paste("Resp", colnames(opt_param_Resp), sep = "_")
@@ -295,15 +295,17 @@ opt_param_df = data.frame(radius_resp = median(opt_df$Resp_radius, na.rm = T),
                     delay_HR = median(opt_df$HR_delay, na.rm = T))
 #That shit works!
 
+write.csv(opt_param_df, "opt_parameters.csv")
+
 #Now; we need to do the crqa
 
 for (file in filelist){
   temp = read.csv(file, sep = ",")
   downSampling_df = DownSampling(temp)
   downSampling_df = subset(downSampling_df, select = -c(.groups))
-  scaled_df = ReScale(downSampling_df)
-  Preprocessed_df = ReMoveOutliers(downSampling_df, threshold = 2.5)
-  crqa_hr = rqa_extractor(Preprocessed_df, "HR1", "HR2", embed = opt_param_df$emddim_HR, delay = opt_param_df$delay_HR, radius = opt_param_df$radius_HR)
+  noOutliers_df = ReMoveOutliers(downSampling_df, threshold = 2.5)
+  Preprocessed_df = ReScale(noOutliers_df)
+  crqa_hr = rqa_extractor(Preprocessed_df, "HR1", "HR2", embed = opt_param_df$emddim_HR, delay = opt_param_df$delay_HR, radius = opt_param_df$radius_HR+.3) #does it really have to be .3?
   crqa_resp = rqa_extractor(Preprocessed_df, "Resp1", "Resp2", embed = opt_param_df$emddim_resp, delay = opt_param_df$delay_resp, radius = opt_param_df$radius_resp)
   colnames(crqa_resp) = paste("Resp", colnames(crqa_resp), sep = "_")
   colnames(crqa_hr) = paste("HR",colnames(crqa_hr), sep = "_")
@@ -331,6 +333,63 @@ write.csv(rqa_result,"crqa_result.csv")
  
 ```{r}
 
+RealRQA_df = read.csv("crqa_result.csv")
+opt_param_df = read.csv("opt_parameters.csv") #Usind the same optimal parameters as the real data
+
+preProcFunc = function(file){
+  temp = read.csv(file)
+  temp = DownSampling(temp)
+  temp = subset(temp, select = -c(.groups))
+  temp = ReMoveOutliers(temp, threshold = 2.5)
+  temp = ReScale(temp)
+  file = unlist(strsplit(gsub('.{4}$', '', file), "/"))[9]
+  filename = paste("dataProc/",file,".csv",sep = "")
+  write.csv(temp,file = filename)
+}
+
+lapply(filelist,preProcFunc)
+
+fileProc = list.files(path = "C:/Users/Ejer/Desktop/3. semester/Experimental Methods 3/Assignment4/dataProc") 
+for (file in fileProc){
+  dataName = paste("dataProc/", file,sep = "")
+  df = read.csv(dataName)
+  sampled_df = df[sample(df$X),]
+  crqa_hr = rqa_extractor(sampled_df, "HR1", "HR2", embed = opt_param_df$emddim_HR, delay = opt_param_df$delay_HR, radius = opt_param_df$radius_HR)
+  crqa_resp = rqa_extractor(sampled_df, "Resp1", "Resp2", embed = opt_param_df$emddim_resp, delay = opt_param_df$delay_resp, radius = opt_param_df$radius_resp)
+  colnames(crqa_resp) = paste("Resp", colnames(crqa_resp), sep = "_")
+  colnames(crqa_hr) = paste("HR",colnames(crqa_hr), sep = "_")
+  if (file == fileProc[1]){
+    ShuffleRQA_df = cbind(crqa_resp, crqa_hr)
+  }else{
+      ShuffleRQA_df = rbind(ShuffleRQA_df,cbind(crqa_resp, crqa_hr))
+  }  
+}  
+
+ShuffleRQA_df = subset(ShuffleRQA_df, select = -c(Resp_study,Resp_group,Resp_trial,Resp_condition,Resp_filename))
+ShuffleRQA_df = plyr::rename(ShuffleRQA_df,c("HR_study"="Study","HR_group"="Group","HR_trial"="Trial","HR_condition"="Condition","HR_filename"="Filename"))
+
+write.csv(ShuffleRQA_df, "crqa_resultShuffled.csv")
+
+ShuffleRQA_df = read.csv("crqa_resultShuffled.csv")
+
+#add coloumn "pair": real or shuffled
+RealRQA_df = mutate(RealRQA_df, Pair = "Real")
+RealRQA_df = subset(RealRQA_df, select = -c(X))
+ShuffleRQA_df = mutate(ShuffleRQA_df, Pair = "Shuffle")
+ShuffleRQA_df = subset(ShuffleRQA_df, select = -c(X))
+#rbind df with real pairs and df with shuffled pairs
+rqa_allPairs = rbind(RealRQA_df, ShuffleRQA_df)
+
+
+#Testing the crqa indexes: making a stastical model with pair as predictor, and crqa indexes as outcome
+crqa_m1 = lm(Resp_RR~1+Pair,rqa_allPairs)
+summary(crqa_m1)
+anova(crqa_m1)
+crqa_m2 = lm(HR_RR~1+Pair,rqa_allPairs)
+summary(crqa_m2)
+
+#Both models are significant --> Beta Estimate for "Shuffle Pairs" is negative --> RR is significantly higher in real pairs combared to shuffled pairs for both HR and Respiration. 
+#You can look at the other crqa parameters for Resp? 
 ```
  
 ### TRICKY! Creating controls: surrogate pair controls
@@ -338,10 +397,87 @@ write.csv(rqa_result,"crqa_result.csv")
  - Run crqa on all the surrogate pairs and save the output. NB. which delay, embed, radius parameters should you use?
  - Test whether crqa shows a difference between real and surrogate pairs
 
+```{r}
+paste("dataProc/",file,".csv",sep = "")
+
+path = paste("dataProc/",file[i],".csv",sep = "")
+
+prepro_filelist = list.files(path = "C:/Users/Ejer/Desktop/3. semester/Experimental Methods 3/Assignment4/dataProc/", pattern = "Study1")  # load the preprocessed files
+
+num=str_extract_all(prepro_filelist, "\\d+") #extract all numbers in the file name (i.e Study?_G?_T?)
+
+df= as.data.frame(t(as.data.frame(num))) #create a transposed (i.e. "tipped") dataframe of these number
+rownames(df)<-NULL #Remove rownames.
+
+pairs=as.numeric(unique(df$V2)) #create pairs, i.e. unique group numbers
+
+SurrogateList <- expand.grid(a = pairs, b = pairs) # expand.grid combines all possible combinations of a given vector
+SurrogateList = subset(SurrogateList, a != b) # Ensure that pair 1 (i.e group1) doesn't get paired with it self.
+
+
+# Per each condition
+for (co in c("Synchronous","TurnTaking","SelfPaced")){ #loop through a list of condintions 
+  for (i in 1:nrow(SurrogateList)){ #and loop through all the pairings of the surrogate list
+    
+  #start recreate filenames from the working directory based on the matching from the surrogatelist
+  f1=paste0('Study1_G',SurrogateList$a[i]) #Insert group numeber from Surrogatelist 
+  f2=paste0('Study1_G',SurrogateList$b[i])
+  
+  file1=prepro_filelist[grepl(f1,prepro_filelist) & grepl(co,prepro_filelist)] #insert conditions as well.
+  file2=prepro_filelist[grepl(f2,prepro_filelist) & grepl(co,prepro_filelist)]
+  
+  d1=read.csv(file1) #Load the recreated filenames
+  
+  d2=read.csv(file2) 
+  
+  #Ensure both dataframes have the same length
+  if (nrow(d1)>nrow(d2)){
+    d1=d1[1:nrow(d2),]
+  } else {
+    d2=d2[1:nrow(d1),]
+  }
+  
+  #creation of surrogate files. (Riccardo's idea of having fun and completely overdoing it ;-) ) 
+  #per each 2 pairs there are 4 possible surrogate pairs: 
+  #pair1person1 w pair2person2; 
+  d3=data.frame(Resp1=d1$Resp1,Resp2=d2$Resp2,HR1=d1$HR1,HR2=d2$HR2,Resp1S=d1$Resp1S,Resp2S=d2$Resp2S,HR1S=d1$HR1S,HR2S=d2$HR2S)
+  #pair1person2 w pair2person2;
+  d4=data.frame(Resp1=d2$Resp1,Resp2=d1$Resp2,HR1=d2$HR1,HR2=d1$HR2,Resp1S=d2$Resp1S,Resp2S=d1$Resp2S,HR1S=d2$HR1S,HR2S=d1$HR2S)
+  
+  #pair1person1 w pair2person1;
+  d5=data.frame(Resp1=d1$Resp1,Resp2=d2$Resp1,HR1=d1$HR1,HR2=d2$HR1,Resp1S=d1$Resp1S,Resp2S=d2$Resp1S,HR1S=d1$HR1S,HR2S=d2$HR1S)
+  #pair1person2 w pair2person2
+  d6=data.frame(Resp1=d2$Resp2,Resp2=d1$Resp2,HR1=d2$HR2,HR2=d1$HR2,Resp1S=d2$Resp2S,Resp2S=d1$Resp2S,HR1S=d2$HR2S,HR2S=d1$HR2S)
+  
+  #Make filenames that tells which pairs have been mixed
+  file3=paste0("Study1_SurrogateGroup",SurrogateList$a[i],"&",SurrogateList$b[i],"a_",co,".csv")
+  file4=paste0("Study1_SurrogateGroup",SurrogateList$a[i],"&",SurrogateList$b[i],"b_",co,".csv")
+  file5=paste0("Study1_SurrogateGroup",SurrogateList$a[i],"&",SurrogateList$b[i],"c_",co,".csv")
+  file6=paste0("Study1_SurrogateGroup",SurrogateList$a[i],"&",SurrogateList$b[i],"d_",co,".csv")
+  
+  #write csv files
+  write_csv(d3,file.path("surrogate",file3))
+  write_csv(d4,file.path("surrogate",file4))
+  write_csv(d5,file.path("surrogate",file5))
+  write_csv(d6,file.path("surrogate",file6))
+  }
+}
+
+##NOW DO THE SAME FOR STUDY 2##
+```
+
 ### Testing effects of conditions
  - make a (probably underpowered) mixed model testing effects of the different conditions on heart rate and respiration coordination
  - N.B: would it make sense to include surrogate pairs? and if so how? what would that tell you?
 
+```{r}
+
+```
+
 ### Effects of respiration coordination on heart rate coordination
  - describe how you would test those.
  - Optional: run the models and report them
+
+```{r}
+
+```
