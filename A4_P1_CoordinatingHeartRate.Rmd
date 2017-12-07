@@ -295,9 +295,9 @@ opt_param_df = data.frame(radius_resp = median(opt_df$Resp_radius, na.rm = T),
                     radius_HR = median(opt_df$HR_radius, na.rm = T),
                     emddim_HR = median(opt_df$HR_emddim, na.rm = T),
                     delay_HR = median(opt_df$HR_delay, na.rm = T))
-#That shit works!
+#It works!
 
-write.csv(opt_param_df, "opt_parameters.csv")
+#write.csv(opt_param_df, "opt_parameters.csv")
 
 #Now; we need to do the crqa
 
