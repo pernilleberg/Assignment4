@@ -107,7 +107,7 @@ ggplot2::ggplot(pair1, aes(x = time, y = Resp1))+geom_line()+
 ggplot2::ggplot(pair1_rescaled, aes(x = time, y = HR1))+geom_line()+
   geom_line(aes(time,HR2),color="red")
 
-#Ricardo's removing outlier function - make a function which can loop through more files?
+#Ricardo's removing outlier function - make a function which can loop through more files
 removeOuts = function(ts,threshold){  
   ts[ts>(mean(ts,na.rm=T)+
              (threshold*sd(ts,na.rm=T)))|
@@ -245,10 +245,12 @@ opt_param_extractor = function(dataset,t1,t2, n = NA){
   return(result_df)
 } 
 
-rqa_extractor = function(dataset, t1, t2, embed, delay, radius){
+rqa_extractor = function(dataset = NULL, t1, t2, embed, delay, radius){
   result = NULL
+  if (is.null(dataset)==F){
   t1 = dplyr::select_(dataset, t1)
   t2 = dplyr::select_(dataset, t2)
+  } 
   result = try(crqa(t1, t2, embed = embed, delay = delay, radius = radius, normalize = 0, rescale = 0, mindiagline = 2, minvertline = 2))
   if (length(result) > 1) {
     result_df = data.frame(RR = result[1], DET = result[2], NRLINE = result[3],
@@ -319,7 +321,7 @@ for (file in filelist){
 rqa_result = subset(rqa_result, select = -c(Resp_study,Resp_group,Resp_trial,Resp_condition,Resp_filename))
 rqa_result = plyr::rename(rqa_result,c("HR_study"="Study","HR_group"="Group","HR_trial"="Trial","HR_condition"="Condition","HR_filename"="Filename"))
 
-#IT FUCKING WORKS!
+#IT WORKS!
 #Quickly writing to csv
 write.csv(rqa_result,"crqa_result.csv")
 
@@ -334,7 +336,7 @@ write.csv(rqa_result,"crqa_result.csv")
 ```{r}
 
 RealRQA_df = read.csv("crqa_result.csv")
-opt_param_df = read.csv("opt_parameters.csv") #Usind the same optimal parameters as the real data
+opt_param_df = read.csv("opt_parameters.csv") #Using the same optimal parameters as the real data
 
 preProcFunc = function(file){
   temp = read.csv(file)
@@ -368,7 +370,7 @@ for (file in fileProc){
 ShuffleRQA_df = subset(ShuffleRQA_df, select = -c(Resp_study,Resp_group,Resp_trial,Resp_condition,Resp_filename))
 ShuffleRQA_df = plyr::rename(ShuffleRQA_df,c("HR_study"="Study","HR_group"="Group","HR_trial"="Trial","HR_condition"="Condition","HR_filename"="Filename"))
 
-write.csv(ShuffleRQA_df, "crqa_resultShuffled.csv")
+#write.csv(ShuffleRQA_df, "crqa_resultShuffled.csv")
 
 ShuffleRQA_df = read.csv("crqa_resultShuffled.csv")
 
@@ -380,16 +382,18 @@ ShuffleRQA_df = subset(ShuffleRQA_df, select = -c(X))
 #rbind df with real pairs and df with shuffled pairs
 rqa_allPairs = rbind(RealRQA_df, ShuffleRQA_df)
 
+#Removing Selfpaced Condition
+rqa_allPairs = subset(rqa_allPairs, Condition != "SelfPaced")
+
 
 #Testing the crqa indexes: making a stastical model with pair as predictor, and crqa indexes as outcome
-crqa_m1 = lm(Resp_RR~1+Pair,rqa_allPairs)
+crqa_m1 = lmer(Resp_RR~1+Pair+(1|Group),rqa_allPairs)
 summary(crqa_m1)
-anova(crqa_m1)
-crqa_m2 = lm(HR_RR~1+Pair,rqa_allPairs)
+crqa_m2 = lmer(HR_RR~1+Pair+(1|Group),rqa_allPairs)
 summary(crqa_m2)
 
 #Both models are significant --> Beta Estimate for "Shuffle Pairs" is negative --> RR is significantly higher in real pairs combared to shuffled pairs for both HR and Respiration. 
-#You can look at the other crqa parameters for Resp? 
+
 ```
  
 ### TRICKY! Creating controls: surrogate pair controls
@@ -398,72 +402,92 @@ summary(crqa_m2)
  - Test whether crqa shows a difference between real and surrogate pairs
 
 ```{r}
-paste("dataProc/",file,".csv",sep = "")
+filelist = list.files(path = "C:/Users/Ejer/Desktop/3. semester/Experimental Methods 3/Assignment4/dataProc/", pattern = "*.csv", full.names = T)
 
-path = paste("dataProc/",file[i],".csv",sep = "")
+ReadPlus = function(filename){ #A function which reads in the Preprocessed files
+  df = read.csv(filename, header = T)
+  df$Study = str_extract(filename, "Study(\\d)") 
+  df$Group = str_extract(filename, "G(\\d)")
+  df$Trial = str_extract(filename, "T(\\d)")
+  df$Condition = gsub('.{4}$', '', strsplit(filename, "_")[[1]][4])
+  df$Filename = filename
+  return(df)
+}
+myfiles = lapply(filelist,ReadPlus)
 
-prepro_filelist = list.files(path = "C:/Users/Ejer/Desktop/3. semester/Experimental Methods 3/Assignment4/dataProc/", pattern = "Study1")  # load the preprocessed files
+Preprocessed_df=rbindlist(myfiles)
 
-num=str_extract_all(prepro_filelist, "\\d+") #extract all numbers in the file name (i.e Study?_G?_T?)
+Preprocessed_df = subset(Preprocessed_df, Condition != "SelfPaced")
 
-df= as.data.frame(t(as.data.frame(num))) #create a transposed (i.e. "tipped") dataframe of these number
-rownames(df)<-NULL #Remove rownames.
-
-pairs=as.numeric(unique(df$V2)) #create pairs, i.e. unique group numbers
-
-SurrogateList <- expand.grid(a = pairs, b = pairs) # expand.grid combines all possible combinations of a given vector
-SurrogateList = subset(SurrogateList, a != b) # Ensure that pair 1 (i.e group1) doesn't get paired with it self.
-
-
-# Per each condition
-for (co in c("Synchronous","TurnTaking","SelfPaced")){ #loop through a list of condintions 
-  for (i in 1:nrow(SurrogateList)){ #and loop through all the pairings of the surrogate list
-    
-  #start recreate filenames from the working directory based on the matching from the surrogatelist
-  f1=paste0('Study1_G',SurrogateList$a[i]) #Insert group numeber from Surrogatelist 
-  f2=paste0('Study1_G',SurrogateList$b[i])
-  
-  file1=prepro_filelist[grepl(f1,prepro_filelist) & grepl(co,prepro_filelist)] #insert conditions as well.
-  file2=prepro_filelist[grepl(f2,prepro_filelist) & grepl(co,prepro_filelist)]
-  
-  d1=read.csv(file1) #Load the recreated filenames
-  
-  d2=read.csv(file2) 
-  
-  #Ensure both dataframes have the same length
-  if (nrow(d1)>nrow(d2)){
-    d1=d1[1:nrow(d2),]
+rqa_extractor = function(dataset = NULL, t1, t2, embed, delay, radius){ #Redefining rqa-extractor without the str_extract part
+  result = NULL
+  if (is.null(dataset)==F){
+  t1 = dplyr::select_(dataset, t1)
+  t2 = dplyr::select_(dataset, t2)
+  } 
+  result = try(crqa(t1, t2, embed = embed, delay = delay, radius = radius, normalize = 0, rescale = 0, mindiagline = 2, minvertline = 2))
+  if (length(result) > 1) {
+    result_df = data.frame(RR = result[1], DET = result[2], NRLINE = result[3],
+             maxL = result[4], L = result[5], ENTR = result[6],
+             rENTR = result[7], LAM = result[8], TT = result[9])
   } else {
-    d2=d2[1:nrow(d1),]
+  result_df = data.frame(RR = NA, DET = NA, NRLINE = NA,
+             maxL = NA, L = NA, ENTR = NA,
+             rENTR = NA, LAM = NA, TT = NA)
   }
-  
-  #creation of surrogate files. (Riccardo's idea of having fun and completely overdoing it ;-) ) 
-  #per each 2 pairs there are 4 possible surrogate pairs: 
-  #pair1person1 w pair2person2; 
-  d3=data.frame(Resp1=d1$Resp1,Resp2=d2$Resp2,HR1=d1$HR1,HR2=d2$HR2,Resp1S=d1$Resp1S,Resp2S=d2$Resp2S,HR1S=d1$HR1S,HR2S=d2$HR2S)
-  #pair1person2 w pair2person2;
-  d4=data.frame(Resp1=d2$Resp1,Resp2=d1$Resp2,HR1=d2$HR1,HR2=d1$HR2,Resp1S=d2$Resp1S,Resp2S=d1$Resp2S,HR1S=d2$HR1S,HR2S=d1$HR2S)
-  
-  #pair1person1 w pair2person1;
-  d5=data.frame(Resp1=d1$Resp1,Resp2=d2$Resp1,HR1=d1$HR1,HR2=d2$HR1,Resp1S=d1$Resp1S,Resp2S=d2$Resp1S,HR1S=d1$HR1S,HR2S=d2$HR1S)
-  #pair1person2 w pair2person2
-  d6=data.frame(Resp1=d2$Resp2,Resp2=d1$Resp2,HR1=d2$HR2,HR2=d1$HR2,Resp1S=d2$Resp2S,Resp2S=d1$Resp2S,HR1S=d2$HR2S,HR2S=d1$HR2S)
-  
-  #Make filenames that tells which pairs have been mixed
-  file3=paste0("Study1_SurrogateGroup",SurrogateList$a[i],"&",SurrogateList$b[i],"a_",co,".csv")
-  file4=paste0("Study1_SurrogateGroup",SurrogateList$a[i],"&",SurrogateList$b[i],"b_",co,".csv")
-  file5=paste0("Study1_SurrogateGroup",SurrogateList$a[i],"&",SurrogateList$b[i],"c_",co,".csv")
-  file6=paste0("Study1_SurrogateGroup",SurrogateList$a[i],"&",SurrogateList$b[i],"d_",co,".csv")
-  
-  #write csv files
-  write_csv(d3,file.path("surrogate",file3))
-  write_csv(d4,file.path("surrogate",file4))
-  write_csv(d5,file.path("surrogate",file5))
-  write_csv(d6,file.path("surrogate",file6))
+  return(result_df)
+}
+
+i = 1 #Loop for surrogate pairs 
+for (g in seq(unique(Preprocessed_df$Group))){ #Loop through all groups
+  g1 = unique(Preprocessed_df$Group)[g]
+  non_g1 = unique(Preprocessed_df$Group)[unique(Preprocessed_df$Group)!= g1] #a list of groups which does not include g1
+  print(g1)
+  for (c in unique(Preprocessed_df$Condition)){
+    g2 = sample(non_g1)[1] #randomly select a group which is in the non_g1 vector
+    temp1 = subset(Preprocessed_df, Group == g1 & Condition == c) #e.g. the first group in condition ’turntaking
+    temp2 = subset(Preprocessed_df, Group == g2 & Condition == c) #e.g. the second group in condition ’turntaking
+    
+      #doing rqa
+    result_Resp = rqa_extractor(t1 = temp1$Resp1, t2 = temp2$Resp2, embed = opt_param_df$emddim_resp, 
+                                delay = opt_param_df$delay_resp, radius = opt_param_df$radius_resp)
+    result_HR = rqa_extractor(t1 = temp1$HR1, t2 = temp2$HR2, embed = opt_param_df$emddim_HR, 
+                                delay = opt_param_df$delay_HR, radius = opt_param_df$radius_HR)
+    colnames(result_Resp) = paste("Resp", colnames(result_Resp), sep = "_")
+    colnames(result_HR) = paste("HR", colnames(result_HR), sep = "_")
+    temp = cbind(result_Resp, result_HR)
+    temp$condition = c
+    temp$group1 = g1
+    temp$group2 = g2
+    if (i == 1){ #create df
+      surPair_rqa = temp
+      i = 2 #if you have already done this then don’t do it again
+    } else { #append to df
+      surPair_rqa = rbind(surPair_rqa, temp)
+    }
+  print(c)
   }
 }
 
-##NOW DO THE SAME FOR STUDY 2##
+#write.csv(surPair_rqa, "Surrogate Pairs.csv")
+surPair_rqa = mutate(surPair_rqa, Pair = "Surrogate")
+
+#Binding the information in coloumn "group1" and "group2" into one coloumn "Group"
+surPair_rqa = unite(surPair_rqa, Group, c(group1, group2), remove=FALSE)
+surPair_rqa = subset(surPair_rqa, select = -c(group1, group2))
+surPair_rqa = mutate(surPair_rqa, "Study" = NA, "Trial" = NA, "Filename" = NA)
+surPair_rqa = plyr::rename(surPair_rqa,c("condition"="Condition"))
+RealRQA_df = subset(RealRQA_df, select = -c(X))
+RealRQA_df = mutate(RealRQA_df, Pair = "Real") 
+
+df_SurReal = rbind(RealRQA_df,surPair_rqa)
+
+#Testing whether these a difference between real pairs and surrogate pairs
+crqa_m3 = lmer(Resp_RR~1+Pair+(1|Group),df_SurReal)
+summary(crqa_m3)
+crqa_m4 = lmer(HR_RR~1+Pair+(1|Group),df_SurReal)
+summary(crqa_m4)
+
 ```
 
 ### Testing effects of conditions
@@ -471,6 +495,32 @@ for (co in c("Synchronous","TurnTaking","SelfPaced")){ #loop through a list of c
  - N.B: would it make sense to include surrogate pairs? and if so how? what would that tell you?
 
 ```{r}
+#For respiration
+model1 = lmer(Resp_RR ~ Pair + (1|Group),df_SurReal)
+summary(model1)
+
+model2 = lmer(Resp_RR ~ Condition + Pair + (1|Group), df_SurReal)
+summary(model2)
+
+model3 = lmer(Resp_RR ~ Condition*Pair + (1|Group), df_SurReal)
+summary(model3)
+
+anova(model1, model2)
+anova(model2, model3)
+
+#For heart rate
+model4 = lmer(HR_RR ~ Pair + (1|Group),df_SurReal)
+summary(model4)
+
+model5 = lmer(HR_RR ~ Condition + Pair + (1|Group), df_SurReal)
+summary(model5)
+
+model6 = lmer(HR_RR ~ Condition*Pair + (1|Group), df_SurReal)
+summary(model6)
+
+
+anova(model4, model5)
+anova(model5, model6)
 
 ```
 
@@ -479,5 +529,5 @@ for (co in c("Synchronous","TurnTaking","SelfPaced")){ #loop through a list of c
  - Optional: run the models and report them
 
 ```{r}
-
+#See written answers
 ```
